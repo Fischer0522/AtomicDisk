@@ -15,8 +15,11 @@
 // specific language governing permissions and limitations
 // under the License..
 
+use core::sync::atomic::Ordering;
+
+use crate::pfs::sys::file::cost_breakdown::COST_BREAKDOWN;
 use crate::prelude::Result;
-use crate::os::SeekFrom;
+use crate::os::{SeekFrom, Instant};
 use crate::pfs::sys::file::{FileInner, FileStatus};
 use crate::pfs::sys::host;
 use crate::pfs::sys::metadata::FILENAME_MAX_LEN;
@@ -78,8 +81,7 @@ impl<D: BlockSet> FileInner<D> {
                 }
             }
         }
-        .ok_or(Error::new(Errno::InvalidArgs))
-        .unwrap();
+        .ok_or(Error::new(Errno::InvalidArgs))?;
 
         self.offset = new_offset as usize;
         self.end_of_file = false;

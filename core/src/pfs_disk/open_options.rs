@@ -3,6 +3,7 @@ use crate::os::Mutex;
 use crate::os::SeekFrom;
 use crate::pfs::fs::OpenOptions as PfsOpenOptions;
 use crate::pfs::fs::SgxFile as PfsFile;
+use crate::pfs::sys::file::cost_breakdown::COST_BREAKDOWN;
 use crate::AeadKey;
 use crate::BlockSet;
 use crate::{prelude::*, Errno};
@@ -128,6 +129,7 @@ impl OpenOptions {
                 return_errno_with_msg!(Errno::IoFailed, "cannot shrink an existed disk")
             }
             write_zeros(&mut pfs_file, old_len, new_len);
+            COST_BREAKDOWN.reset();
             total_blocks
         } else {
             debug_assert!(file_exists);
@@ -136,7 +138,8 @@ impl OpenOptions {
 
         // Ensure all existing data are zeroed if clear is required
         if self.clear {
-            write_zeros(&mut pfs_file, 0, old_len);
+            //write_zeros(&mut pfs_file, 0, old_len);
+            COST_BREAKDOWN.reset();
         }
 
         let pfs_disk = PfsDisk {
@@ -156,8 +159,9 @@ impl OpenOptions {
         root_key: AeadKey,
     ) -> Result<PfsDisk<D>> {
         let mut file = create_pfs_file(path, disk, root_key)?;
-        let new_len = PFS_INNER_OFFSET + self.total_blocks.unwrap() * BLOCK_SIZE;
+        let new_len = PFS_INNER_OFFSET;
         write_zeros(&mut file, 0, new_len);
+        COST_BREAKDOWN.reset();
         let pfs_disk = PfsDisk {
             file: Mutex::new(file),
             path: path.to_string(),

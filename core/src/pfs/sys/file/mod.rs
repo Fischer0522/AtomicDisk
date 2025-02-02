@@ -1,3 +1,5 @@
+use cost_breakdown::COST_BREAKDOWN;
+
 // Licensed to the Apache Software Foundation (ASF) under one
 // or more contributor license agreements.  See the NOTICE file
 // distributed with this work for additional information
@@ -43,14 +45,15 @@ mod open;
 mod other;
 mod read;
 mod write;
+pub mod cost_breakdown;
 
 #[derive(Debug)]
-pub struct ProtectedFile<D> {
+pub struct ProtectedFile<D: BlockSet> {
     file: Mutex<FileInner<D>>,
 }
 
 #[derive(Debug)]
-pub struct FileInner<D> {
+pub struct FileInner<D: BlockSet> {
     host_file: BlockFile<D>,
     metadata: MetadataInfo,
     root_mht: FileNodeRef,
@@ -65,6 +68,14 @@ pub struct FileInner<D> {
     journal: RecoveryJournal<D>,
     cache: LruCache<FileNode>,
 }
+
+impl<D: BlockSet> Drop for FileInner<D> {
+    fn drop(&mut self) {
+        COST_BREAKDOWN.print_cost();
+    }
+}
+
+
 
 impl<D: BlockSet> ProtectedFile<D> {
     pub fn open(

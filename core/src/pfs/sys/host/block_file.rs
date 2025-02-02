@@ -1,3 +1,5 @@
+use core::sync::atomic::Ordering;
+
 use super::HostFs;
 use crate::{
     bail, ensure,
@@ -5,7 +7,9 @@ use crate::{
     BlockId, BlockSet, BufMut, BufRef, Errno, Error,
 };
 use crate::prelude::*;
+use crate::pfs::sys::file::cost_breakdown::COST_BREAKDOWN;
 
+use crate::os::Instant;
 #[derive(Debug)]
 pub struct BlockFile<D> {
     raw_disk: D,
@@ -20,6 +24,9 @@ impl<D: BlockSet> BlockFile<D> {
         Self { raw_disk, size }
     }
     pub fn read(&mut self, number: u64, buf: &mut [u8]) -> Result<()> {
+
+            let begin_time = Instant::now();
+
         ensure!(
             buf.len() == NODE_SIZE,
             Error::with_msg(
@@ -30,10 +37,20 @@ impl<D: BlockSet> BlockFile<D> {
         let buf_mut = BufMut::try_from(buf)?;
         self.raw_disk
             .read(number as BlockId, buf_mut)?;
+
+            let end_time = Instant::now();
+            let cost = end_time.checked_duration_since(begin_time).unwrap().as_nanos();
+            COST_BREAKDOWN.io_cost.fetch_add(cost as u64, Ordering::Relaxed);
+
         Ok(())
     }
 
     pub fn write(&mut self, number: u64, buf: &[u8]) -> Result<()> {
+
+
+            let begin_time = Instant::now();
+
+
         ensure!(
             buf.len() == NODE_SIZE,
             Error::with_msg(
@@ -47,11 +64,22 @@ impl<D: BlockSet> BlockFile<D> {
         let buf_ref = BufRef::try_from(buf)?;
         self.raw_disk
             .write(number as BlockId, buf_ref)?;
+
+            let end_time = Instant::now();
+            let cost = end_time.checked_duration_since(begin_time).unwrap().as_nanos();
+            COST_BREAKDOWN.io_cost.fetch_add(cost as u64, Ordering::Relaxed);
+
         Ok(())
     }
 
     pub fn flush(&mut self) -> Result<()> {
+            let begin_time = Instant::now();
+
         self.raw_disk.flush()?;
+
+            let end_time = Instant::now();
+            let cost = end_time.checked_duration_since(begin_time).unwrap().as_nanos();
+            COST_BREAKDOWN.io_cost.fetch_add(cost as u64, Ordering::Relaxed);
         Ok(())
     }
 

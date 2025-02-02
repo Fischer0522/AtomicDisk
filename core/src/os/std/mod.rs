@@ -37,6 +37,7 @@ pub use std::sync::{Condvar, Mutex as CvarMutex};
 
 /// Reuse `std::thread::ThreadId`.
 pub type Tid = std::thread::ThreadId;
+pub use std::time::Instant;
 
 /// A struct to get the current thread id.
 pub struct CurrentThread;

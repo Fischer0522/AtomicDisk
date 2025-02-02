@@ -15,7 +15,11 @@
 // specific language governing permissions and limitations
 // under the License..
 
+use core::sync::atomic::Ordering;
+
+use crate::os::Instant;
 use crate::os::SeekFrom;
+use crate::pfs::sys::file::cost_breakdown::COST_BREAKDOWN;
 use crate::prelude::{Result,Error};
 use crate::pfs::sys::file::FileInner;
 use crate::pfs::sys::metadata::MD_USER_DATA_SIZE;
@@ -30,7 +34,6 @@ impl<D: BlockSet> FileInner<D> {
             return Ok(0);
         }
 
-
         ensure!(
             self.opts.write || self.opts.append || self.opts.update,
             Error::with_msg(Errno::PermissionDenied, "permission denied")
@@ -42,6 +45,7 @@ impl<D: BlockSet> FileInner<D> {
 
         let mut left_to_write = buf.len();
         let mut offset = 0;
+
 
         // the first block of user data is written in the meta-data encrypted part
         if self.offset < MD_USER_DATA_SIZE {
@@ -57,6 +61,7 @@ impl<D: BlockSet> FileInner<D> {
             }
             self.need_writing = true;
         }
+
 
         while left_to_write > 0 {
             let file_node = match self.get_data_node() {
@@ -101,6 +106,9 @@ impl<D: BlockSet> FileInner<D> {
                 self.need_writing = true;
             }
         }
+
+
+       // COST_BREAKDOWN.print_cost();
         Ok(offset)
     }
 

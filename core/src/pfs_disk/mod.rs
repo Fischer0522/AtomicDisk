@@ -131,6 +131,12 @@ impl<D: BlockSet> PfsDisk<D> {
         self.validate_range(addr)?;
         let offset = addr * BLOCK_SIZE + PFS_INNER_OFFSET;
         let mut file = self.file.lock();
+        if offset > file.file_size()? as usize {
+            file.seek(SeekFrom::End(0)).unwrap();
+            let remain_size = (offset - file.file_size()? as usize) / BLOCK_SIZE;
+            let buf = Buf::alloc(remain_size)?;
+            file.write(buf.as_slice()).unwrap();
+        }
         file.seek(SeekFrom::Start(offset as u64)).unwrap();
         file.write(buf.as_slice()).unwrap();
         Ok(())

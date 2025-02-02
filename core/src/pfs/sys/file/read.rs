@@ -1,3 +1,5 @@
+use core::sync::atomic::Ordering;
+
 // Licensed to the Apache Software Foundation (ASF) under one
 // or more contributor license agreements.  See the NOTICE file
 // distributed with this work for additional information
@@ -20,11 +22,16 @@ use crate::pfs::sys::file::FileInner;
 use crate::pfs::sys::metadata::MD_USER_DATA_SIZE;
 use crate::pfs::sys::node::NODE_SIZE;
 use crate::{bail, ensure, BlockSet};
+use crate::os::Instant;
+use super::cost_breakdown::COST_BREAKDOWN;
 
 
 
 impl<D: BlockSet> FileInner<D> {
     pub fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+
+            let begin_time = Instant::now();
+
         if buf.is_empty() {
             return Ok(0);
         }
@@ -55,6 +62,10 @@ impl<D: BlockSet> FileInner<D> {
             self.offset += len;
         }
 
+        let end_time = Instant::now();
+        let cost = end_time.checked_duration_since(begin_time).unwrap().as_nanos();
+        COST_BREAKDOWN.io_cost.fetch_add(cost as u64, Ordering::Relaxed);
+
         while left_to_read > 0 {
             let file_node = match self.get_data_node() {
                 Ok(node) => node,
@@ -64,6 +75,8 @@ impl<D: BlockSet> FileInner<D> {
                 }
             };
 
+            let begin_time = Instant::now();
+
             let offset_in_node = (self.offset - MD_USER_DATA_SIZE) % NODE_SIZE;
             let len = left_to_read.min(NODE_SIZE - offset_in_node);
             buf[offset..offset + len].copy_from_slice(
@@ -72,6 +85,9 @@ impl<D: BlockSet> FileInner<D> {
             offset += len;
             left_to_read -= len;
             self.offset += len;
+            let end_time = Instant::now();
+            let cost = end_time.checked_duration_since(begin_time).unwrap().as_nanos();
+            COST_BREAKDOWN.io_cost.fetch_add(cost as u64, Ordering::Relaxed);
         }
 
         // user wanted to read more and we had to shrink the request
@@ -79,6 +95,10 @@ impl<D: BlockSet> FileInner<D> {
             assert!(self.offset == file_size);
             self.end_of_file = true;
         }
+
+
+
+
 
         Ok(attempted_to_read - left_to_read)
     }

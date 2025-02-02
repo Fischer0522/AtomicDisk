@@ -33,6 +33,10 @@ use core::mem;
 use crate::os::Arc;
 
 use super::host::HostFs;
+use crate::pfs::sys::file::cost_breakdown::COST_BREAKDOWN;
+
+
+use crate::os::Instant;
 
 // the key to encrypt the data or mht, and the gmac
 #[derive(Copy, Clone, Debug, Default)]
@@ -256,6 +260,8 @@ impl FileNode {
 
         // TODO: support integrity only
 
+        let begin_time = Instant::now();
+
         let iv = AeadIv::new_zeroed();
         let mac = Aead::new()
             .encrypt(
@@ -266,6 +272,11 @@ impl FileNode {
                 &mut self.ciphertext.node_data.as_mut(),
             )?;
 
+        let end_time = Instant::now();
+        let cost = end_time.checked_duration_since(begin_time).unwrap().as_nanos();
+        COST_BREAKDOWN.encrypt_cost.fetch_add(cost as u64, core::sync::atomic::Ordering::Relaxed);
+
+        let begin_time = Instant::now();
         if let Some(parent) = parent {
             let index = match self.node_type {
                 NodeType::Mht => (self.logic_number - 1) % CHILD_MHT_NODES_COUNT,
@@ -278,11 +289,18 @@ impl FileNode {
             );
         }
 
+        let end_time = Instant::now();
+        let cost = end_time.checked_duration_since(begin_time).unwrap().as_nanos();
+        COST_BREAKDOWN.mht_cost.fetch_add(cost as u64, core::sync::atomic::Ordering::Relaxed);
+
+
         Ok(mac)
     }
 
     pub fn decrypt(&mut self, key: &AeadKey, mac: &AeadMac) -> Result<()> {
         // TODO: support integrity only
+        let begin_time = Instant::now();
+
         Aead::new()
             .decrypt(
                 self.ciphertext.node_data.as_ref(),
@@ -292,6 +310,10 @@ impl FileNode {
                 mac,
                 self.plaintext.as_mut(),
             )?;
+
+        let end_time = Instant::now();
+        let cost = end_time.checked_duration_since(begin_time).unwrap().as_nanos();
+        COST_BREAKDOWN.decrypt_cost.fetch_add(cost as u64, core::sync::atomic::Ordering::Relaxed);
 
         Ok(())
     }
@@ -303,20 +325,27 @@ impl FileNode {
 
     #[inline]
     pub fn read_from_disk(&mut self, file: &mut dyn HostFs) -> Result<()> {
+
+
         let physical_number = self.ciphertext.physical_number;
         assert!(physical_number != 0);
 
-        file.read(physical_number, &mut self.ciphertext.node_data)
+        file.read(physical_number, &mut self.ciphertext.node_data)?;
+
+        Ok(())
     }
 
     #[inline]
     pub fn write_to_disk(&mut self, file: &mut dyn HostFs) -> Result<()> {
+
         let physical_number = self.ciphertext.physical_number;
         assert!(physical_number != 0);
 
         file.write(physical_number, &self.ciphertext.node_data)?;
         self.need_writing = false;
         self.new_node = false;
+
+
         Ok(())
     }
 

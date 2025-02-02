@@ -44,7 +44,7 @@ pub struct EncryptMode(fs_imp::EncryptMode);
 /// that the file contains internally.
 ///
 /// SgxFiles are automatically closed when they go out of scope.
-pub struct SgxFile<D> {
+pub struct SgxFile<D: BlockSet> {
     inner: fs_imp::SgxFile<D>,
 }
 

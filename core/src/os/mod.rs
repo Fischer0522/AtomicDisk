@@ -27,7 +27,7 @@ pub use self::occlum::{
     spawn, Aead, AeadIv, AeadKey, AeadMac, Arc, BTreeMap, Box, Condvar, CurrentThread, CvarMutex,
     HashMap, HashSet, JoinHandle, Mutex, MutexGuard, Pages, Rng, RwLock, RwLockReadGuard,
     RwLockWriteGuard, SeekFrom, Skcipher, SkcipherIv, SkcipherKey, String, Tid, ToString, Vec, Weak,
-    PAGE_SIZE,
+    PAGE_SIZE, Instant,
 };
 
 #[cfg(feature = "std")]
@@ -37,5 +37,5 @@ pub use self::std::{
     spawn, Aead, AeadIv, AeadKey, AeadMac, Arc, BTreeMap, Box, Condvar, CurrentThread, CvarMutex,
     HashMap, HashSet, JoinHandle, Mutex, MutexGuard, Pages, Rng, RwLock, RwLockReadGuard,
     RwLockWriteGuard, SeekFrom, Skcipher, SkcipherIv, SkcipherKey, String, Tid, ToString, Vec,
-    Weak, PAGE_SIZE,
+    Weak, PAGE_SIZE,Instant
 };

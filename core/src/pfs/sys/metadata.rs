@@ -28,8 +28,10 @@ use crate::{
 };
 use core::ffi::CStr;
 use core::mem;
+use core::sync::atomic::Ordering;
 use pod::Pod;
-
+use crate::pfs::sys::file::cost_breakdown::COST_BREAKDOWN;
+use crate::os::Instant;
 
 pub const SGX_FILE_ID: u64 = 0x5347_585F_4649_4C45;
 pub const SGX_FILE_MAJOR_VERSION: u8 = 0x01;
@@ -247,6 +249,8 @@ impl MetadataInfo {
     pub fn encrypt(&mut self, key: &AeadKey) -> Result<()> {
         // TODO: support integrity only
 
+        let begin_time = Instant::now();
+
         let mac = Aead::new()
             .encrypt(
                 self.encrypted_plain.as_ref(),
@@ -259,11 +263,19 @@ impl MetadataInfo {
 
         self.node.metadata.plaintext.gmac = mac;
 
+        let end_time = Instant::now();
+        let cost = end_time.checked_duration_since(begin_time).unwrap().as_nanos();
+        COST_BREAKDOWN.encrypt_cost.fetch_add(cost as u64, Ordering::Relaxed);
+
+
         Ok(())
     }
 
     pub fn decrypt(&mut self, key: &AeadKey) -> Result<()> {
         // TODO: support integrity only
+
+        let begin_time = Instant::now();
+
 
         Aead::new()
             .decrypt(
@@ -275,6 +287,11 @@ impl MetadataInfo {
                 self.encrypted_plain.as_mut(),
             )
             .unwrap();
+
+        let end_time = Instant::now();
+        let cost = end_time.checked_duration_since(begin_time).unwrap().as_nanos();
+        COST_BREAKDOWN.decrypt_cost.fetch_add(cost as u64, Ordering::Relaxed);
+
 
         Ok(())
     }

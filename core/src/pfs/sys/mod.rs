@@ -72,7 +72,7 @@ impl Default for OpenOptions {
 }
 
 #[derive(Debug)]
-pub struct SgxFile<D> {
+pub struct SgxFile<D: BlockSet> {
     file: Box<ProtectedFile<D>>,
 }
 
