@@ -35,24 +35,24 @@ fn main() {
     let benches = vec![
 
  
-            BenchBuilder::new("PfsDisk::write_seq")
-            .disk_type(DiskType::PfsDisk)
-            .io_type(IoType::Write)
-            .io_pattern(IoPattern::Seq)
-            .total_bytes(total_bytes)
-            .buf_size(1 * MiB)
-            .concurrency(1)
-            .build()
-            .unwrap(),
-            // BenchBuilder::new("PfsDisk::write_rnd")
-            // .disk_type(DiskType::PfsDisk)
-            // .io_type(IoType::Write)
-            // .io_pattern(IoPattern::Rnd)
-            // .total_bytes(total_bytes)
-            // .buf_size(4 * KiB)
-            // .concurrency(1)
-            // .build()
-            // .unwrap(),
+        //     BenchBuilder::new("PfsDisk::write_seq")
+        //     .disk_type(DiskType::PfsDisk)
+        //     .io_type(IoType::Write)
+        //     .io_pattern(IoPattern::Seq)
+        //     .total_bytes(total_bytes)
+        //     .buf_size(256 * KiB)
+        //     .concurrency(1)
+        //     .build()
+        //     .unwrap(),
+        //     BenchBuilder::new("PfsDisk::write_rnd")
+        //     .disk_type(DiskType::PfsDisk)
+        //     .io_type(IoType::Write)
+        //     .io_pattern(IoPattern::Rnd)
+        //     .total_bytes(total_bytes)
+        //     .buf_size(4 * KiB)
+        //     .concurrency(1)
+        //     .build()
+        //     .unwrap(),
         //     BenchBuilder::new("PfsDisk::write_rnd")
         //     .disk_type(DiskType::PfsDisk)
         //     .io_type(IoType::Write)
@@ -99,15 +99,24 @@ fn main() {
         //     .concurrency(1)
         //     .build()
         //     .unwrap(),
-        //     BenchBuilder::new("PfsDisk::read_rnd")
-        //     .disk_type(DiskType::PfsDisk)
-        //     .io_type(IoType::Read)
-        //     .io_pattern(IoPattern::Rnd)
-        //     .total_bytes(total_bytes)
-        //     .buf_size(256 * KiB)
-        //     .concurrency(1)
-        //     .build()
-        //     .unwrap(),
+            // BenchBuilder::new("EncDisk::write_seq")
+            // .disk_type(DiskType::EncDisk)
+            // .io_type(IoType::Write)
+            // .io_pattern(IoPattern::Seq)
+            // .total_bytes(total_bytes)
+            // .buf_size(256 * KiB)
+            // .concurrency(1)
+            // .build()
+            // .unwrap(),
+            BenchBuilder::new("EncDisk::write_rnd")
+            .disk_type(DiskType::EncDisk)
+            .io_type(IoType::Write)
+            .io_pattern(IoPattern::Rnd)
+            .total_bytes(total_bytes)
+            .buf_size(4 * KiB)
+            .concurrency(1)
+            .build()
+            .unwrap(),
         // Benchmark on `EncDisk` not enabled by default
     ];
 
@@ -145,6 +154,7 @@ fn run_benches(benches: Vec<Box<dyn Bench>>) {
         "\nbench result: {}. {} benched; {} failed.",
         bench_res, benched_count, failed_count
     );
+    COST_BREAKDOWN.print_cost();
 }
 
 type Result<T> = core::result::Result<T, Error>;
@@ -376,10 +386,10 @@ mod benches {
             let disk = self.disk.clone();
             let total_nblocks = self.total_bytes / BLOCK_SIZE;
             thread::spawn(move || disk.write_seq(0 as BlockId, total_nblocks, 1024))
-                .join()
-                .unwrap()
+                .join().unwrap()?;
+            COST_BREAKDOWN.reset();
+            Ok(())
         }
-
         fn display_ext(&self) {}
     }
 
@@ -440,6 +450,8 @@ mod disks {
 
         fn read_rnd(&self, pos: BlockId, total_nblocks: usize, buf_nblocks: usize) -> Result<()>;
         fn write_rnd(&self, pos: BlockId, total_nblocks: usize, buf_nblocks: usize) -> Result<()>;
+
+        fn reset(&self);
     }
 
     #[derive(Clone)]
@@ -596,6 +608,10 @@ mod disks {
             }
            self.sync()
         }
+
+        fn reset(&self) {
+            COST_BREAKDOWN.reset();
+        }
     }
 
     fn gen_rnd_pos(total_nblocks: usize, buf_nblocks: usize) -> BlockId {
@@ -617,6 +633,7 @@ mod disks {
         }
 
         fn dummy_encrypt() -> Result<()> {
+            let begin = Instant::now();
             let key = AeadKey::random();
             let plain = Buf::alloc(1)?;
             let mut cipher = Buf::alloc(1)?;
@@ -627,10 +644,14 @@ mod disks {
                 &[],
                 cipher.as_mut_slice(),
             )?;
+            let end = Instant::now();
+            let cost = end.checked_duration_since(begin).unwrap().as_nanos();
+            COST_BREAKDOWN.encrypt_cost.fetch_add(cost as u64, Ordering::Relaxed);
             Ok(())
         }
 
         fn dummy_decrypt() -> Result<()> {
+            let begin = Instant::now();
             let cipher = Buf::alloc(1)?;
             let mut plain = Buf::alloc(1)?;
             let _ = Aead::new().decrypt(
@@ -641,6 +662,9 @@ mod disks {
                 &AeadMac::default(),
                 plain.as_mut_slice(),
             );
+            let end = Instant::now();
+            let cost = end.checked_duration_since(begin).unwrap().as_nanos();
+            COST_BREAKDOWN.decrypt_cost.fetch_add(cost as u64, Ordering::Relaxed);
             Ok(())
         }
     }
@@ -653,7 +677,11 @@ mod disks {
                 for _ in 0..buf_nblocks {
                     Self::dummy_decrypt().unwrap();
                 }
+                let begin = Instant::now();
                 self.file_disk.read(pos + i * buf_nblocks, buf.as_mut())?;
+                let end = Instant::now();
+                let cost = end.checked_duration_since(begin).unwrap().as_nanos();
+                COST_BREAKDOWN.io_cost.fetch_add(cost as u64, Ordering::Relaxed);
             }
 
             Ok(())
@@ -666,7 +694,11 @@ mod disks {
                 for _ in 0..buf_nblocks {
                     Self::dummy_encrypt().unwrap();
                 }
+                let begin = Instant::now();
                 self.file_disk.write(pos + i * buf_nblocks, buf.as_ref())?;
+                let end = Instant::now();
+                let cost = end.checked_duration_since(begin).unwrap().as_nanos();
+                COST_BREAKDOWN.io_cost.fetch_add(cost as u64, Ordering::Relaxed);
             }
 
             self.file_disk.flush()
@@ -679,8 +711,12 @@ mod disks {
                 for _ in 0..buf_nblocks {
                     Self::dummy_decrypt().unwrap();
                 }
+                let begin = Instant::now();
                 let rnd_pos = gen_rnd_pos(total_nblocks, buf_nblocks);
                 self.file_disk.read(pos + rnd_pos, buf.as_mut())?;
+                let end = Instant::now();
+                let cost = end.checked_duration_since(begin).unwrap().as_nanos();
+                COST_BREAKDOWN.io_cost.fetch_add(cost as u64, Ordering::Relaxed);
             }
 
             Ok(())
@@ -694,10 +730,18 @@ mod disks {
                     Self::dummy_encrypt().unwrap();
                 }
                 let rnd_pos = gen_rnd_pos(total_nblocks, buf_nblocks);
+                let begin = Instant::now();
                 self.file_disk.write(pos + rnd_pos, buf.as_ref())?;
+                let end = Instant::now();
+                let cost = end.checked_duration_since(begin).unwrap().as_nanos();
+                COST_BREAKDOWN.io_cost.fetch_add(cost as u64, Ordering::Relaxed);
             }
 
             self.file_disk.flush()
+        }
+
+        fn reset(&self) {
+            COST_BREAKDOWN.reset();
         }
     }
 }

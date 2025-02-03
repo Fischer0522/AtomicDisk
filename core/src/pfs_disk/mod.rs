@@ -3,6 +3,7 @@ use crate::bio::bio_req::{BioReq, BioType};
 use crate::os::Mutex;
 use crate::os::SeekFrom;
 use crate::pfs::fs::SgxFile as PfsFile;
+use crate::pfs::sys::file::cost_breakdown::COST_BREAKDOWN;
 use crate::{prelude::*, BlockSet, Buf, BufMut};
 use crate::{BufRef, Errno};
 use crate::os::{Aead, AeadIv as Iv, AeadKey as Key, AeadMac as Mac};
@@ -240,6 +241,10 @@ impl<D: BlockSet> PfsDisk<D> {
 
     pub fn total_blocks(&self) -> usize {
         self.total_blocks
+    }
+
+    pub fn reset(&self) {
+        COST_BREAKDOWN.reset();
     }
 }
 

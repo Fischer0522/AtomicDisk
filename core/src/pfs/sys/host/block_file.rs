@@ -25,7 +25,7 @@ impl<D: BlockSet> BlockFile<D> {
     }
     pub fn read(&mut self, number: u64, buf: &mut [u8]) -> Result<()> {
 
-            let begin_time = Instant::now();
+           // let begin_time = Instant::now();
 
         ensure!(
             buf.len() == NODE_SIZE,
@@ -38,9 +38,9 @@ impl<D: BlockSet> BlockFile<D> {
         self.raw_disk
             .read(number as BlockId, buf_mut)?;
 
-            let end_time = Instant::now();
-            let cost = end_time.checked_duration_since(begin_time).unwrap().as_nanos();
-            COST_BREAKDOWN.io_cost.fetch_add(cost as u64, Ordering::Relaxed);
+            // let end_time = Instant::now();
+            // let cost = end_time.checked_duration_since(begin_time).unwrap().as_nanos();
+            // COST_BREAKDOWN.io_cost.fetch_add(cost as u64, Ordering::Relaxed);
 
         Ok(())
     }
@@ -48,7 +48,7 @@ impl<D: BlockSet> BlockFile<D> {
     pub fn write(&mut self, number: u64, buf: &[u8]) -> Result<()> {
 
 
-            let begin_time = Instant::now();
+            //let begin_time = Instant::now();
 
 
         ensure!(
@@ -65,21 +65,21 @@ impl<D: BlockSet> BlockFile<D> {
         self.raw_disk
             .write(number as BlockId, buf_ref)?;
 
-            let end_time = Instant::now();
-            let cost = end_time.checked_duration_since(begin_time).unwrap().as_nanos();
-            COST_BREAKDOWN.io_cost.fetch_add(cost as u64, Ordering::Relaxed);
+            // let end_time = Instant::now();
+            // let cost = end_time.checked_duration_since(begin_time).unwrap().as_nanos();
+            // COST_BREAKDOWN.io_cost.fetch_add(cost as u64, Ordering::Relaxed);
 
         Ok(())
     }
 
     pub fn flush(&mut self) -> Result<()> {
-            let begin_time = Instant::now();
+           // let begin_time = Instant::now();
 
         self.raw_disk.flush()?;
 
-            let end_time = Instant::now();
-            let cost = end_time.checked_duration_since(begin_time).unwrap().as_nanos();
-            COST_BREAKDOWN.io_cost.fetch_add(cost as u64, Ordering::Relaxed);
+            // let end_time = Instant::now();
+            // let cost = end_time.checked_duration_since(begin_time).unwrap().as_nanos();
+            // COST_BREAKDOWN.io_cost.fetch_add(cost as u64, Ordering::Relaxed);
         Ok(())
     }
 

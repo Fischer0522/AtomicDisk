@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License..
 
+use core::sync::atomic::Ordering;
+
 use crate::os::Vec;
 use crate::prelude::{Result,Error};
 use crate::pfs::sys::file::{FileInner, FileStatus};
@@ -23,6 +25,9 @@ use crate::pfs::sys::metadata::MD_USER_DATA_SIZE;
 use crate::pfs::sys::node::FileNodeRef;
 use crate::{bail, ensure, BlockSet, Errno};
 use crate::prelude::*;
+use crate::os::Instant;
+
+use super::cost_breakdown::COST_BREAKDOWN;
 
 impl<D: BlockSet> FileInner<D> {
     pub fn flush(&mut self) -> Result<()> {
@@ -85,11 +90,26 @@ impl<D: BlockSet> FileInner<D> {
                     None
                 }
             }) {
+                let begin_time = Instant::now();
+
                 node.write_to_disk(&mut self.host_file)?;
+
+                let end_time = Instant::now();
+                let cost = end_time.checked_duration_since(begin_time).unwrap().as_nanos();
+                if node.is_data() {
+                    COST_BREAKDOWN.io_cost.fetch_add(cost as u64, Ordering::Relaxed);
+                } else {
+                    COST_BREAKDOWN.mht_cost.fetch_add(cost as u64, Ordering::Relaxed);
+                }
             }
+            let begin_time = Instant::now();
+
             self.root_mht
                 .borrow_mut()
                 .write_to_disk(&mut self.host_file)?;
+            let end_time = Instant::now();
+            let cost = end_time.checked_duration_since(begin_time).unwrap().as_nanos();
+            COST_BREAKDOWN.mht_cost.fetch_add(cost as u64, Ordering::Relaxed);
         }
 
         self.metadata.write_to_disk(&mut self.host_file)?;
@@ -219,19 +239,33 @@ impl<D: BlockSet> FileInner<D> {
         }
 
       //  mht_nodes.sort_by(|a, b| b.logic_number.cmp(&a.logic_number));
+        let begin_time = Instant::now();
 
         for node in mht_nodes.iter() {
             node.write_recovery_file(journal)?;
         }
+        let end_time = Instant::now();
+        let cost = end_time.checked_duration_since(begin_time).unwrap().as_nanos();
+        COST_BREAKDOWN.mht_cost.fetch_add(cost as u64, Ordering::Relaxed);
+
+        let begin_time = Instant::now();
 
         for node in data_nodes.iter() {
             node.write_recovery_file(journal)?;
         }
+        let end_time = Instant::now();
+        let cost = end_time.checked_duration_since(begin_time).unwrap().as_nanos();
+        COST_BREAKDOWN.io_cost.fetch_add(cost as u64, Ordering::Relaxed);
+
+        let begin_time = Instant::now();
 
         let root_mht = self.root_mht.borrow();
         if root_mht.need_writing && !root_mht.new_node {
             root_mht.write_recovery_file(journal)?;
         }
+        let end_time = Instant::now();
+        let cost = end_time.checked_duration_since(begin_time).unwrap().as_nanos();
+        COST_BREAKDOWN.mht_cost.fetch_add(cost as u64, Ordering::Relaxed);
 
         self.metadata.write_recovery_file(journal)
     }

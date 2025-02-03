@@ -62,9 +62,9 @@ impl<D: BlockSet> FileInner<D> {
             self.offset += len;
         }
 
-        let end_time = Instant::now();
-        let cost = end_time.checked_duration_since(begin_time).unwrap().as_nanos();
-        COST_BREAKDOWN.io_cost.fetch_add(cost as u64, Ordering::Relaxed);
+        // let end_time = Instant::now();
+        // let cost = end_time.checked_duration_since(begin_time).unwrap().as_nanos();
+        // COST_BREAKDOWN.io_cost.fetch_add(cost as u64, Ordering::Relaxed);
 
         while left_to_read > 0 {
             let file_node = match self.get_data_node() {
@@ -75,7 +75,7 @@ impl<D: BlockSet> FileInner<D> {
                 }
             };
 
-            let begin_time = Instant::now();
+          //  let begin_time = Instant::now();
 
             let offset_in_node = (self.offset - MD_USER_DATA_SIZE) % NODE_SIZE;
             let len = left_to_read.min(NODE_SIZE - offset_in_node);
@@ -85,9 +85,9 @@ impl<D: BlockSet> FileInner<D> {
             offset += len;
             left_to_read -= len;
             self.offset += len;
-            let end_time = Instant::now();
-            let cost = end_time.checked_duration_since(begin_time).unwrap().as_nanos();
-            COST_BREAKDOWN.io_cost.fetch_add(cost as u64, Ordering::Relaxed);
+            // let end_time = Instant::now();
+            // let cost = end_time.checked_duration_since(begin_time).unwrap().as_nanos();
+            //COST_BREAKDOWN.io_cost.fetch_add(cost as u64, Ordering::Relaxed);
         }
 
         // user wanted to read more and we had to shrink the request

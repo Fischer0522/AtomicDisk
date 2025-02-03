@@ -128,32 +128,29 @@ impl<D: BlockSet> FileInner<D> {
         );
         mht_node.parent = Some(parent_mht_node);
 
+        mht_node.read_from_disk(&mut self.host_file)?;
+
         let end = Instant::now();
         let cost = end.checked_duration_since(begin).unwrap().as_nanos();
         COST_BREAKDOWN.mht_cost.fetch_add(cost as u64, Ordering::Relaxed);
 
-        mht_node.read_from_disk(&mut self.host_file)?;
-
         let gcm_data = mht_node.get_gcm_data().ok_or(Error::new(Errno::Unexpected))?;
         mht_node.decrypt(&gcm_data.key, &gcm_data.mac)?;
-
-        let begin = Instant::now();
 
         let mht_node = FileNode::build_ref(mht_node);
         ensure!(
             self.cache.push(physical_number, mht_node.clone()),
             Error::new(Errno::Unexpected)
         );
-
-        let end = Instant::now();
-        let cost = end.checked_duration_since(begin).unwrap().as_nanos();
-        COST_BREAKDOWN.mht_cost.fetch_add(cost as u64, Ordering::Relaxed);
         Ok(mht_node)
     }
 
     fn append_data_node(&mut self) -> Result<FileNodeRef> {
         let begin = Instant::now();
         let mht_node = self.get_mht_node()?;
+        let end = Instant::now();
+        let cost = end.checked_duration_since(begin).unwrap().as_nanos();
+        COST_BREAKDOWN.mht_cost.fetch_add(cost as u64, Ordering::Relaxed);
         let (logic_number, physical_number) = self.get_data_node_numbers();
         let mut data_node = FileNode::new(
             NodeType::Data,
@@ -163,6 +160,7 @@ impl<D: BlockSet> FileInner<D> {
         );
         data_node.parent = Some(mht_node);
 
+        let begin = Instant::now();
         let data_node = FileNode::build_ref(data_node);
         ensure!(
             self.cache.push(physical_number, data_node.clone()),
@@ -170,10 +168,10 @@ impl<D: BlockSet> FileInner<D> {
         );
         let end = Instant::now();
         let cost = end.checked_duration_since(begin).unwrap().as_nanos();
-        COST_BREAKDOWN.mht_cost.fetch_add(cost as u64, Ordering::Relaxed);
+        COST_BREAKDOWN.io_cost.fetch_add(cost as u64, Ordering::Relaxed);
         Ok(data_node)
     }
-
+    
     fn read_data_node(&mut self) -> Result<FileNodeRef> {
         let begin = Instant::now();
         let (logic_number, physical_number) = self.get_data_node_numbers();
@@ -183,6 +181,10 @@ impl<D: BlockSet> FileInner<D> {
         }
 
         let mht_node = self.get_mht_node()?;
+
+        let end = Instant::now();
+        let cost = end.checked_duration_since(begin).unwrap().as_nanos();
+        COST_BREAKDOWN.mht_cost.fetch_add(cost as u64, Ordering::Relaxed); 
         let mut data_node = FileNode::new(
             NodeType::Data,
             logic_number,
@@ -190,25 +192,23 @@ impl<D: BlockSet> FileInner<D> {
             self.metadata.encrypt_flags(),
         );
         data_node.parent = Some(mht_node);
+
+        let begin = Instant::now();
+        data_node.read_from_disk(&mut self.host_file)?;
+
         let end = Instant::now();
         let cost = end.checked_duration_since(begin).unwrap().as_nanos();
-        COST_BREAKDOWN.mht_cost.fetch_add(cost as u64, Ordering::Relaxed);
-
-        data_node.read_from_disk(&mut self.host_file)?;
+        COST_BREAKDOWN.io_cost.fetch_add(cost as u64, Ordering::Relaxed);
 
         let gcm_data = data_node.get_gcm_data().ok_or(Error::new(Errno::Unexpected))?;
         data_node.decrypt(&gcm_data.key, &gcm_data.mac)?;
 
-        let begin = Instant::now();
+
         let data_node = FileNode::build_ref(data_node);
         ensure!(
             self.cache.push(physical_number, data_node.clone()),
             Error::new(Errno::Unexpected)
         );
-
-        let end = Instant::now();
-        let cost = end.checked_duration_since(begin).unwrap().as_nanos();
-        COST_BREAKDOWN.mht_cost.fetch_add(cost as u64, Ordering::Relaxed);
         Ok(data_node)
     }
 
@@ -230,7 +230,6 @@ impl<D: BlockSet> FileInner<D> {
     }
 
     fn shrink_cache(&mut self) -> Result<()> {
-        let begin = Instant::now();
         while self.cache.len() > self.max_cache_page {
             let node = self.cache.back().ok_or(Error::new(Errno::Unexpected))?;
             if !node.borrow().need_writing {
@@ -244,9 +243,6 @@ impl<D: BlockSet> FileInner<D> {
                 })?;
             }
         }
-        let end = Instant::now();
-        let cost = end.checked_duration_since(begin).unwrap().as_nanos();
-        COST_BREAKDOWN.mht_cost.fetch_add(cost as u64, Ordering::Relaxed);
         Ok(())
     }
 

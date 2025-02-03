@@ -50,3 +50,4 @@ pub use self::bio::{BlockId, BlockSet, Buf, BufMut, BufRef, BLOCK_SIZE};
 pub use self::os::{Aead, AeadIv, AeadKey, AeadMac, Rng};
 pub use self::pfs_disk::PfsDisk;
 pub use self::util::{Aead as _, RandomInit, Rng as _};
+pub use self::pfs::sys::file::cost_breakdown::COST_BREAKDOWN;

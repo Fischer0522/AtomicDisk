@@ -1,4 +1,4 @@
-use core::sync::atomic::AtomicU64;
+use core::sync::atomic::{AtomicU64, Ordering};
 use core::time::Duration;
 use crate::os::Mutex;
 use crate::prelude::*;
@@ -8,8 +8,6 @@ pub struct CostBreakdown {
     pub decrypt_cost: AtomicU64,
     pub mht_cost: AtomicU64,
     pub io_cost: AtomicU64,
-    pub write_num: AtomicU64,
-    pub read_num: AtomicU64,
 }
 
 impl CostBreakdown {
@@ -18,8 +16,15 @@ impl CostBreakdown {
         warn!("decrypt_cost: {:?}", self.decrypt_cost);
         warn!("mht_cost: {:?}", self.mht_cost);
         warn!("io_cost: {:?}", self.io_cost);
-        warn!("write_num: {:?}", self.write_num);
-        warn!("read_num: {:?}", self.read_num);
+
+        let total_cost = (self.encrypt_cost.load(Ordering::Relaxed) + 
+        self.decrypt_cost.load(Ordering::Relaxed) + 
+        self.mht_cost.load(Ordering::Relaxed) + 
+        self.io_cost.load(Ordering::Relaxed) )as f64;
+        warn!("encrypt_percent: {:?}", self.encrypt_cost.load(Ordering::Relaxed) as f64 / total_cost);
+        warn!("decrypt_percent: {:?}", self.decrypt_cost.load(Ordering::Relaxed) as f64 / total_cost);
+        warn!("mht_percent: {:?}", self.mht_cost.load(Ordering::Relaxed) as f64 / total_cost);
+        warn!("io_percent: {:?}", self.io_cost.load(Ordering::Relaxed) as f64 / total_cost);
     }
 
     pub fn reset(&self) {
@@ -27,8 +32,7 @@ impl CostBreakdown {
         self.decrypt_cost.store(0, core::sync::atomic::Ordering::Relaxed);
         self.mht_cost.store(0, core::sync::atomic::Ordering::Relaxed);
         self.io_cost.store(0, core::sync::atomic::Ordering::Relaxed);
-        self.write_num.store(0, core::sync::atomic::Ordering::Relaxed);
-        self.read_num.store(0, core::sync::atomic::Ordering::Relaxed);
+
     }
 }
 
@@ -38,8 +42,6 @@ lazy_static::lazy_static! {
         decrypt_cost: AtomicU64::new(0),
         mht_cost: AtomicU64::new(0),
         io_cost: AtomicU64::new(0),
-        write_num: AtomicU64::new(0),
-        read_num: AtomicU64::new(0),
     };
 }
 
