@@ -4,6 +4,7 @@
 //! Write/read amount, concurrency and I/O buffer size are configurable.
 //! Provides a baseline named `EncDisk`, which simply protects data using authenticated encryption.
 //! Results are displayed as throughput in MiB/sec.
+use spin::Once;
 use sworndisk_v2::*;
 
 use self::benches::{Bench, BenchBuilder, IoPattern, IoType};
@@ -16,49 +17,25 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
+static INIT_LOG: Once = Once::new();
+
+fn init_logger() {
+    INIT_LOG.call_once(|| {
+        env_logger::builder()
+            .is_test(true)
+            .filter_level(log::LevelFilter::Debug)
+            .try_init()
+            .unwrap();
+    });
+}
+
 fn main() {
-    let total_bytes = 512 * MiB;
+   init_logger();
+    let total_bytes = 5 * GiB;
     // Specify all benchmarks
     let benches = vec![
-        BenchBuilder::new("SwornDisk::write_seq")
-            .disk_type(DiskType::SwornDisk)
-            .io_type(IoType::Write)
-            .io_pattern(IoPattern::Seq)
-            .total_bytes(total_bytes)
-            .buf_size(512 * KiB)
-            .concurrency(1)
-            .build()
-            .unwrap(),
-        BenchBuilder::new("SwornDisk::write_rnd")
-            .disk_type(DiskType::SwornDisk)
-            .io_type(IoType::Write)
-            .io_pattern(IoPattern::Rnd)
-            .total_bytes(total_bytes)
-            .buf_size(4 * KiB)
-            .concurrency(1)
-            .build()
-            .unwrap(),
-        BenchBuilder::new("SwornDisk::read_seq")
-            .disk_type(DiskType::SwornDisk)
-            .io_type(IoType::Read)
-            .io_pattern(IoPattern::Seq)
-            .total_bytes(total_bytes)
-            .buf_size(1 * MiB)
-            .concurrency(1)
-            .build()
-            .unwrap(),
-        BenchBuilder::new("SwornDisk::read_rnd")
-            .disk_type(DiskType::SwornDisk)
-            .io_type(IoType::Read)
-            .io_pattern(IoPattern::Rnd)
-            .total_bytes(total_bytes)
-            .buf_size(4 * KiB)
-            .concurrency(1)
-            .build()
-            .unwrap(),
-        // Benchmark on `EncDisk` not enabled by default
-        // BenchBuilder::new("EncDisk::write_seq")
-        //     .disk_type(DiskType::EncDisk)
+        // BenchBuilder::new("SwornDisk::write_seq")
+        //     .disk_type(DiskType::SwornDisk)
         //     .io_type(IoType::Write)
         //     .io_pattern(IoPattern::Seq)
         //     .total_bytes(total_bytes)
@@ -66,6 +43,43 @@ fn main() {
         //     .concurrency(1)
         //     .build()
         //     .unwrap(),
+        // BenchBuilder::new("SwornDisk::write_rnd")
+        //     .disk_type(DiskType::SwornDisk)
+        //     .io_type(IoType::Write)
+        //     .io_pattern(IoPattern::Rnd)
+        //     .total_bytes(total_bytes)
+        //     .buf_size(4 * KiB)
+        //     .concurrency(1)
+        //     .build()
+        //     .unwrap(),
+        // BenchBuilder::new("SwornDisk::read_seq")
+        //     .disk_type(DiskType::SwornDisk)
+        //     .io_type(IoType::Read)
+        //     .io_pattern(IoPattern::Seq)
+        //     .total_bytes(total_bytes)
+        //     .buf_size(1 * MiB)
+        //     .concurrency(1)
+        //     .build()
+        //     .unwrap(),
+        // BenchBuilder::new("SwornDisk::read_rnd")
+        //     .disk_type(DiskType::SwornDisk)
+        //     .io_type(IoType::Read)
+        //     .io_pattern(IoPattern::Rnd)
+        //     .total_bytes(total_bytes)
+        //     .buf_size(4 * KiB)
+        //     .concurrency(1)
+        //     .build()
+        //     .unwrap(),
+        // Benchmark on `EncDisk` not enabled by default
+        BenchBuilder::new("EncDisk::write_seq")
+            .disk_type(DiskType::EncDisk)
+            .io_type(IoType::Write)
+            .io_pattern(IoPattern::Seq)
+            .total_bytes(total_bytes)
+            .buf_size(256 * KiB)
+            .concurrency(1)
+            .build()
+            .unwrap(),
     ];
 
     // Run all benchmarks and output the results
@@ -81,6 +95,8 @@ fn run_benches(benches: Vec<Box<dyn Bench>>) {
         print!("bench {} ... ", &b);
         b.prepare();
 
+        COST_BREAKDOWN.reset();
+
         let start = Instant::now();
         let res = b.run();
         if let Err(e) = res {
@@ -92,7 +108,7 @@ fn run_benches(benches: Vec<Box<dyn Bench>>) {
 
         let throughput = DisplayThroughput::new(b.total_bytes(), elapsed);
         println!("{}", throughput);
-
+        COST_BREAKDOWN.print_cost();
         b.display_ext();
         benched_count += 1;
     }
@@ -409,8 +425,8 @@ mod disks {
     impl FileAsDisk {
         pub fn create(nblocks: usize, path: &str) -> Self {
             unsafe {
-                // let oflag = O_RDWR | O_CREAT | O_TRUNC;
-                let oflag = O_RDWR | O_CREAT | O_TRUNC | O_DIRECT;
+                 let oflag = O_RDWR | O_CREAT | O_TRUNC;
+                //let oflag = O_RDWR | O_CREAT | O_TRUNC | O_DIRECT;
                 let fd = open(CString::new(path).unwrap().as_ptr() as _, oflag, 0o666);
                 if fd == -1 {
                     println!("open error: {}", std::io::Error::last_os_error());
@@ -574,6 +590,7 @@ mod disks {
         }
 
         fn dummy_encrypt() -> Result<()> {
+
             let key = AeadKey::random();
             let plain = Buf::alloc(1)?;
             let mut cipher = Buf::alloc(1)?;
@@ -584,6 +601,7 @@ mod disks {
                 &[],
                 cipher.as_mut_slice(),
             )?;
+
             Ok(())
         }
 
@@ -620,13 +638,27 @@ mod disks {
             let buf = Buf::alloc(buf_nblocks)?;
 
             for i in 0..total_nblocks / buf_nblocks {
+                let begin = Instant::now();
                 for _ in 0..buf_nblocks {
                     Self::dummy_encrypt().unwrap();
                 }
+                let end = Instant::now();
+                let cost = end.checked_duration_since(begin).unwrap().as_nanos();
+                COST_BREAKDOWN.encrypt_cost.fetch_add(cost as u64, Ordering::Relaxed);
+
+                let begin = Instant::now();
                 self.file_disk.write(pos + i * buf_nblocks, buf.as_ref())?;
+                let end = Instant::now();
+                let cost = end.checked_duration_since(begin).unwrap().as_nanos();
+                COST_BREAKDOWN.io_cost.fetch_add(cost as u64, Ordering::Relaxed);
             }
 
-            self.file_disk.flush()
+            let begin = Instant::now();
+            self.file_disk.flush()?;
+            let end = Instant::now();
+            let cost = end.checked_duration_since(begin).unwrap().as_nanos();
+            COST_BREAKDOWN.io_cost.fetch_add(cost as u64, Ordering::Relaxed);
+            Ok(())
         }
 
         fn read_rnd(&self, pos: BlockId, total_nblocks: usize, buf_nblocks: usize) -> Result<()> {
@@ -647,14 +679,28 @@ mod disks {
             let buf = Buf::alloc(buf_nblocks)?;
 
             for _ in 0..total_nblocks / buf_nblocks {
+                let begin = Instant::now();
                 for _ in 0..buf_nblocks {
                     Self::dummy_encrypt().unwrap();
                 }
+                let end = Instant::now();
+                let cost = end.checked_duration_since(begin).unwrap().as_nanos();
+                COST_BREAKDOWN.encrypt_cost.fetch_add(cost as u64, Ordering::Relaxed);
+                
+                let begin = Instant::now();
                 let rnd_pos = gen_rnd_pos(total_nblocks, buf_nblocks);
                 self.file_disk.write(pos + rnd_pos, buf.as_ref())?;
+                let end = Instant::now();
+                let cost = end.checked_duration_since(begin).unwrap().as_nanos();
+                COST_BREAKDOWN.io_cost.fetch_add(cost as u64, Ordering::Relaxed);
             }
 
-            self.file_disk.flush()
+            let begin = Instant::now();
+            self.file_disk.flush()?;
+            let end = Instant::now();
+            let cost = end.checked_duration_since(begin).unwrap().as_nanos();
+            COST_BREAKDOWN.io_cost.fetch_add(cost as u64, Ordering::Relaxed);
+            Ok(())
         }
     }
 }

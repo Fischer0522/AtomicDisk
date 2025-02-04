@@ -10,6 +10,7 @@
 use super::bio::{BioReq, BioReqQueue, BioResp, BioType};
 use super::block_alloc::{AllocTable, BlockAlloc};
 use super::data_buf::DataBuf;
+use crate::cost_breakdown::COST_BREAKDOWN;
 use crate::layers::bio::{BlockId, BlockSet, Buf, BufMut, BufRef};
 use crate::layers::log::TxLogStore;
 use crate::layers::lsm::{
@@ -23,6 +24,7 @@ use crate::tx::Tx;
 use core::num::NonZeroUsize;
 use core::ops::{Add, Sub};
 use core::sync::atomic::{AtomicBool, Ordering};
+use std::time::Instant;
 use pod::Pod;
 
 /// Logical Block Address.
@@ -364,7 +366,11 @@ impl<D: BlockSet + 'static> DiskInner<D> {
     pub fn write(&self, mut lba: Lba, buf: BufRef) -> Result<()> {
         // Write block contents to `DataBuf` directly
         for block_buf in buf.iter() {
+            let begin = Instant::now();
             let buf_at_capacity = self.data_buf.put(RecordKey { lba }, block_buf);
+            let end = Instant::now();
+            let cost = end.checked_duration_since(begin).unwrap().as_nanos();
+            COST_BREAKDOWN.buf_cost.fetch_add(cost as u64, Ordering::Relaxed);
 
             // Flush all data blocks in `DataBuf` to disk if it's full
             if buf_at_capacity {
@@ -389,10 +395,10 @@ impl<D: BlockSet + 'static> DiskInner<D> {
     fn flush_data_buf(&self) -> Result<()> {
         let records = self.write_blocks_from_data_buf()?;
         // Insert new records of data blocks to `TxLsmTree`
-        for (key, value) in records {
-            // TODO: Error handling: Should dealloc the written blocks
-            self.logical_block_table.put(key, value)?;
-        }
+        // for (key, value) in records {
+        //     // TODO: Error handling: Should dealloc the written blocks
+        //     self.logical_block_table.put(key, value)?;
+        // }
 
         self.data_buf.clear();
         Ok(())
@@ -406,6 +412,7 @@ impl<D: BlockSet + 'static> DiskInner<D> {
         if num_write == 0 {
             return Ok(records);
         }
+        let begin = Instant::now();
 
         // Allocate slots for data blocks
         let hbas = self
@@ -413,12 +420,16 @@ impl<D: BlockSet + 'static> DiskInner<D> {
             .alloc_batch(NonZeroUsize::new(num_write).unwrap())?;
         debug_assert_eq!(hbas.len(), num_write);
         let hba_batches = hbas.group_by(|hba1, hba2| hba2 - hba1 == 1);
+        let end = Instant::now();
+        let cost = end.checked_duration_since(begin).unwrap().as_nanos();
+        COST_BREAKDOWN.buf_cost.fetch_add(cost as u64, Ordering::Relaxed);
 
         // Perform encryption and batch disk write
         let mut cipher_buf = Buf::alloc(num_write)?;
         let mut cipher_slice = cipher_buf.as_mut_slice();
         let mut nth = 0;
         for hba_batch in hba_batches {
+            let begin = Instant::now();
             for (i, &hba) in hba_batch.iter().enumerate() {
                 let (lba, data_block) = &data_blocks[nth];
                 let key = Key::random();
@@ -433,11 +444,19 @@ impl<D: BlockSet + 'static> DiskInner<D> {
                 records.push((*lba, RecordValue { hba, key, mac }));
                 nth += 1;
             }
+            let end = Instant::now();
+            let cost = end.checked_duration_since(begin).unwrap().as_nanos();
+            COST_BREAKDOWN.encrypt_cost.fetch_add(cost as u64, Ordering::Relaxed);
 
+            let begin = Instant::now();
             self.user_data_disk.write(
                 *hba_batch.first().unwrap(),
                 BufRef::try_from(&cipher_slice[..hba_batch.len() * BLOCK_SIZE]).unwrap(),
             )?;
+            let end = Instant::now();
+            let cost = end.checked_duration_since(begin).unwrap().as_nanos();
+            COST_BREAKDOWN.io_cost.fetch_add(cost as u64, Ordering::Relaxed);
+
             cipher_slice = &mut cipher_slice[hba_batch.len() * BLOCK_SIZE..];
         }
 
@@ -449,15 +468,21 @@ impl<D: BlockSet + 'static> DiskInner<D> {
         self.flush_data_buf()?;
         debug_assert!(self.data_buf.is_empty());
 
-        self.logical_block_table.sync()?;
+  //      self.logical_block_table.sync()?;
 
-        // XXX: May impact performance when there comes frequent syncs
-        self.block_validity_table
-            .do_compaction(&self.tx_log_store)?;
+        // // XXX: May impact performance when there comes frequent syncs
+        // self.block_validity_table
+        //     .do_compaction(&self.tx_log_store)?;
 
-        self.tx_log_store.sync()?;
+        // self.tx_log_store.sync()?;
 
-        self.user_data_disk.flush()
+        let begin = Instant::now();
+        self.user_data_disk.flush()?;
+        let end = Instant::now();
+        let cost = end.checked_duration_since(begin).unwrap().as_nanos();
+        COST_BREAKDOWN.io_cost.fetch_add(cost as u64, Ordering::Relaxed);
+
+        Ok(())
     }
 
     /// Handle one block I/O request. Mark the request completed when finished,

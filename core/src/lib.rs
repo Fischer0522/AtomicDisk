@@ -32,6 +32,7 @@ mod os;
 mod prelude;
 mod tx;
 mod util;
+pub mod cost_breakdown;
 
 #[cfg(not(feature = "occlum"))]
 extern crate alloc;
@@ -48,3 +49,4 @@ pub use self::layers::bio::{BlockId, BlockSet, Buf, BufMut, BufRef, BLOCK_SIZE};
 pub use self::layers::disk::SwornDisk;
 pub use self::os::{Aead, AeadIv, AeadKey, AeadMac, Rng};
 pub use self::util::{Aead as _, RandomInit, Rng as _};
+pub use self::cost_breakdown::COST_BREAKDOWN;
